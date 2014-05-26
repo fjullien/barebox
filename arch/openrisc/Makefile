@@ -1,6 +1,7 @@
 CPPFLAGS += -D__OR1K__ -ffixed-r10 -mhard-mul -mhard-div
 
 board-$(CONFIG_GENERIC) := generic
+board-$(CONFIG_NEEK)    := neek
 
 KALLSYMS += --symbol-prefix=_
 

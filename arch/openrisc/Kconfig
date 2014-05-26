@@ -16,6 +16,10 @@ config GENERIC
 	bool "Generic"
 	select OPENRISC
 
+config NEEK
+	bool "Neek"
+	select OPENRISC
+
 endchoice
 
 source common/Kconfig
