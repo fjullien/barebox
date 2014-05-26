@@ -470,7 +470,7 @@ flash_sect_t find_sector (struct flash_info *info, ulong addr)
 	return sector;
 }
 
-static int cfi_erase(struct flash_info *finfo, size_t count, loff_t offset)
+static int cfi_erase(struct flash_info *finfo, size_t count, loff_t offset, int verbose)
 {
         unsigned long start, end;
         int i, ret = 0;
@@ -481,10 +481,16 @@ static int cfi_erase(struct flash_info *finfo, size_t count, loff_t offset)
         end   = find_sector(finfo, (unsigned long)finfo->base + offset +
 			count - 1);
 
+	if (verbose)
+		init_progression_bar(end - start);
+
         for (i = start; i <= end; i++) {
                 ret = finfo->cfi_cmd_set->flash_erase_one(finfo, i);
                 if (ret)
                         goto out;
+
+		if (verbose)
+			show_progress(i - start);
 
 		if (ctrlc()) {
 			ret = -EINTR;
@@ -492,6 +498,8 @@ static int cfi_erase(struct flash_info *finfo, size_t count, loff_t offset)
 		}
         }
 out:
+	if (verbose)
+		putchar('\n');
         return ret;
 }
 
@@ -933,7 +941,7 @@ static int cfi_mtd_erase(struct mtd_info *mtd, struct erase_info *instr)
 	struct flash_info *info = container_of(mtd, struct flash_info, mtd);
 	int ret;
 
-	ret = cfi_erase(info, instr->len, instr->addr);
+	ret = cfi_erase(info, instr->len, instr->addr, 1);
 
 	if (ret) {
 		instr->state = MTD_ERASE_FAILED;
