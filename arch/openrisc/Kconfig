@@ -20,6 +20,10 @@ config NEEK
 	bool "Neek"
 	select OPENRISC
 
+config DE1
+	bool "DE1"
+	select OPENRISC
+
 endchoice
 
 source common/Kconfig
