@@ -24,6 +24,7 @@
 #include <malloc.h>
 #include <errno.h>
 #include <envfs.h>
+#include <elf.h>
 
 struct filetype_str {
 	const char *name;	/* human readable filetype */
@@ -53,6 +54,7 @@ static const struct filetype_str filetype_str[] = {
 	[filetype_gpt] = { "GUID Partition Table", "gpt" },
 	[filetype_bpk] = { "Binary PacKage", "bpk" },
 	[filetype_barebox_env] = { "barebox environment file", "bbenv" },
+	[filetype_elf] = { "ELF file", "elf" },
 };
 
 const char *file_type_to_string(enum filetype f)
@@ -183,6 +185,7 @@ enum filetype file_detect_type(const void *_buf, size_t bufsize)
 	const u64 *buf64 = _buf;
 	const u8 *buf8 = _buf;
 	const u16 *buf16 = _buf;
+	const Elf32_Ehdr *ehdr = _buf;
 	enum filetype type;
 
 	if (bufsize < 9)
@@ -245,6 +248,10 @@ enum filetype file_detect_type(const void *_buf, size_t bufsize)
 
 	if (bufsize >= 1536 && buf16[512 + 28] == le16_to_cpu(0xef53))
 		return filetype_ext;
+
+	if (ehdr->e_ident[EI_MAG0] == ELFMAG0 && ehdr->e_ident[EI_MAG1] == ELFMAG1 &&
+	    ehdr->e_ident[EI_MAG2] == ELFMAG2 && ehdr->e_ident[EI_MAG3] == ELFMAG3)
+	    return filetype_elf;
 
 	return filetype_unknown;
 }

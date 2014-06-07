@@ -309,6 +309,15 @@ config CMD_BOOTM
 		  -e OFFS	entry point to the image relative to start (0)
 		  -o DTS	specify device tree
 
+config CMD_BOOTELF
+	tristate
+	default y
+	select GLOBALVAR
+	prompt "bootelf"
+	help
+	  Boot from an ELF image in memory
+
+	  Usage: bootm [-ps] BOOTSRC
 
 config CMD_BOOTM_SHOW_TYPE
 	bool
