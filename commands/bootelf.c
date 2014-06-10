@@ -20,133 +20,115 @@
 #include <elf.h>
 #include <filetype.h>
 #include <getopt.h>
+#include <fs.h>
+#include <fcntl.h>
+/*#include <asm/cache.h>*/
 
-static unsigned long load_elf_image_phdr(unsigned long addr);
-static unsigned long load_elf_image_shdr(unsigned long addr);
+static unsigned long load_elf_image_phdr(void *addr);
+static unsigned long load_elf_image_shdr(void *addr);
 
 /* Allow ports to override the default behavior */
 __attribute__((weak))
 unsigned long do_bootelf_exec(ulong (*entry)(int, char * const[]),
 			       int argc, char * const argv[])
 {
-	unsigned long ret;
-
-	/*
-	 * QNX images require the data cache is disabled.
-	 * Data cache is already flushed, so just turn it off.
-	 */
-/*	int dcache = dcache_status();
-	if (dcache)
-		dcache_disable();*/
-
-	/*
-	 * pass address parameter as argv[0] (aka command name),
-	 * and all remaining args
-	 */
-	ret = entry(argc, argv);
-
-/*	if (dcache)
-		dcache_enable();*/
-
-	return ret;
+	return entry(argc, argv);
 }
 
-/* ======================================================================
- * Determine if a valid ELF image exists at the given memory location.
- * First looks at the ELF header magic field, the makes sure that it is
- * executable and makes sure that it is for a PowerPC.
- * ====================================================================== */
-int valid_elf_image(unsigned long addr)
+int valid_elf_image(void *addr)
 {
-	Elf32_Ehdr *ehdr = (Elf32_Ehdr *)addr;		/* Elf header structure pointer */
+	Elf32_Ehdr *ehdr = (Elf32_Ehdr *)addr;
 
 	if (file_detect_type((void *)addr, sizeof(Elf32_Ehdr)) != filetype_elf) {
-		printf("## No elf image at address 0x%08lx\n", addr);
+		printf("## No elf image at address 0x%p\n", addr);
 		return 0;
 	}
 
 	if (ehdr->e_type != ET_EXEC) {
-		printf("## Not a 32-bit elf image at address 0x%08lx\n", addr);
+		printf("## Not a 32-bit elf image at address 0x%p\n", addr);
 		return 0;
 	}
 
 	return 1;
 }
 
-/* ======================================================================
- * Interpreter command to boot an arbitrary ELF image from memory.
- * ====================================================================== */
 int do_bootelf(int argc, char *argv[])
 {
-	unsigned long addr;		/* Address of the ELF image     */
-	unsigned long rc;		/* Return value from user code  */
-	char *sload, *saddr;
-	const char *elf_file = NULL;
+	void *addr;
 	int opt;
+	int use_prog_hdr = 1;
+	int fd = -1;
 
 	while ((opt = getopt(argc, argv, "sp")) > 0) {
 		switch(opt) {
 		case 's':
+			use_prog_hdr = 0;
 			break;
 		case 'p':
+			use_prog_hdr = 1;
 			break;
 		default:
 			break;
 		}
 	}
 
-	if (optind != argc)
-		elf_file = argv[optind];
-
-	if (!elf_file || !*elf_file) {
-		printf("no elf file given\n");
-		goto err_out;
+	if (optind != argc) {
+		if (!isdigit(*argv[optind])) {
+			fd = open(argv[optind], O_RDONLY);
+			if (fd < 0) {
+				perror("open");
+				goto out;
+			}
+			addr = memmap(fd, PROT_READ);
+			if (addr == (void *)-1) {
+				perror("memmap");
+				goto out;
+			}
+		} else {
+			addr = (void *)simple_strtoul(argv[optind], NULL, 16);
+		}
+	} else {
+		printf("No elf file or address given\n");
+		goto out;
 	}
-
-/*
-	sload = saddr = NULL;
-	if (argc == 3) {
-		sload = argv[1];
-		saddr = argv[2];
-	} else if (argc == 2) {
-		if (argv[1][0] == '-')
-			sload = argv[1];
-		else
-			saddr = argv[1];
-	}
-
-	if (saddr)
-		addr = simple_strtoul(saddr, NULL, 16);
-	else
-		addr = load_addr;
 
 	if (!valid_elf_image(addr))
-		return 1;
+		goto out;
 
-	if (sload && sload[1] == 'p')
-		addr = load_elf_image_phdr(addr);
+	if (use_prog_hdr)
+		addr = (void *)load_elf_image_phdr(addr);
 	else
-		addr = load_elf_image_shdr(addr);
+		addr = (void *)load_elf_image_shdr(addr);
+	
+	printf ("## Starting application at 0x%p ...\n", addr);
 
-	printf("## Starting application at 0x%08lx ...\n", addr);
-*/
+	shutdown_barebox();
+
 	/*
 	 * pass address parameter as argv[0] (aka command name),
 	 * and all remaining args
 	 */
-	rc = do_bootelf_exec((void *)addr, argc - 1, argv + 1);
-	if (rc != 0)
-		rcode = 1;
+	do_bootelf_exec((void *)addr, argc - 1, argv + 1);
 
-	printf("## Application terminated, rc = 0x%lx\n", rc);
-	return rcode;
+	/*
+	 * The application returned. Since we have shutdown barebox and
+	 * we know nothing about the state of the cpu/memory we can't
+	 * do anything here.
+	 */
+	while (1);
+
+out:
+	if (fd > 0)
+		close(fd);
+
+	return 1;
 }
 
 /* ======================================================================
  * A very simple elf loader, assumes the image is valid, returns the
  * entry point address.
  * ====================================================================== */
-static unsigned long load_elf_image_phdr(unsigned long addr)
+static unsigned long load_elf_image_phdr(void *addr)
 {
 	Elf32_Ehdr *ehdr;		/* Elf header structure pointer     */
 	Elf32_Phdr *phdr;		/* Program header structure pointer */
@@ -166,14 +148,14 @@ static unsigned long load_elf_image_phdr(unsigned long addr)
 		if (phdr->p_filesz != phdr->p_memsz)
 			memset(dst + phdr->p_filesz, 0x00,
 				phdr->p_memsz - phdr->p_filesz);
-		flush_cache((unsigned long)dst, phdr->p_filesz);
+		/*flush_cache((unsigned long)dst, phdr->p_filesz);*/
 		++phdr;
 	}
 
 	return ehdr->e_entry;
 }
 
-static unsigned long load_elf_image_shdr(unsigned long addr)
+static unsigned long load_elf_image_shdr(void *addr)
 {
 	Elf32_Ehdr *ehdr;		/* Elf header structure pointer     */
 	Elf32_Shdr *shdr;		/* Section header structure pointer */
@@ -220,7 +202,7 @@ static unsigned long load_elf_image_shdr(unsigned long addr)
 				(const void *) image,
 				shdr->sh_size);
 		}
-		flush_cache(shdr->sh_addr, shdr->sh_size);
+		/*flush_cache(shdr->sh_addr, shdr->sh_size);*/
 	}
 
 	return ehdr->e_entry;
