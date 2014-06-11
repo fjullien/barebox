@@ -5,3 +5,4 @@ obj-y                 += muldi3.o
 obj-y                 += lshrdi3.o
 obj-y                 += ashldi3.o
 obj-y                 += ashrdi3.o
+obj-y                 += bootm.o
